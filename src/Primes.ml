@@ -1,67 +1,79 @@
 
-module Eratosthenes =
-struct 
-  let create n = 
-    let () = assert (n < Sys.max_array_length) in
-    let arr = Array.make (n + 1) true in
-    let rec cross start step =
-      if 0 <= start && start <= n then
-        begin
-          if arr.(start) then arr.(start) <- false;
-          cross (start + step) step 
-        end
-      else
-        ()
-    in
+type t =
+    {
+      data_len:  int;
+      data: BatBitSet.t; (* This is a tradeoff between memory and speed!
+                            a bitset is slower to access than a bool array
+                            but is a win in term of memory and speed to
+                            enumerate values.
+                          *)
+    }
 
-      for i = 2 to n do 
-        if arr.(i) then
+module Eratosthenes =
+struct
+
+  let create n =
+    let t =
+      {
+        data_len  = (n + 1);
+        data = BatBitSet.create_full (n + 1);
+      }
+    in
+    let cross start step =
+      if start >= 0 then
+        let idx = ref start in
+          while !idx <= n do
+            BatBitSet.unset t.data !idx;
+            idx := !idx + step
+          done
+    in
+      for i = 2 to n do
+        if BatBitSet.mem t.data i then
           cross (i * i) i
       done;
-
-      arr
+      t
 
   let fold f a t =
-    let len = Array.length t in
+    BatEnum.fold f a (BatBitSet.enum t.data)
 
-    let rec fold' pos a = 
-      if pos < len then
-        if t.(pos) then
-          fold' (pos + 1) (f a pos)
-        else
-          fold' (pos + 1) a
-      else
-        a
-    in
-      fold' 2 a
+  let list t =
+    List.rev (fold (fun acc p -> p :: acc) [] t)
 
-  let list t = 
-    let rlst = ref [] in
-      for i = (Array.length t) - 1 downto 2 do
-        if t.(i) then
-          rlst := i :: !rlst 
-      done;
-      !rlst
-
+  let length t =
+    t.data_len
 end
 
-let is_prime t n = 
-  if n < Array.length t then
-    t.(n) 
+module E = Eratosthenes
+
+let is_prime t n =
+  if n < E.length t then
+    BatBitSet.mem t.data n
   else
     begin
       let idx = ref 2 in
       let res = ref true in
+      let end_bitset = ref false in
       let sqrt = int_of_float (sqrt (float_of_int n)) in
-        while !res && !idx < Array.length t do
-          if t.(!idx) then
-            res := (n mod !idx) <> 0;
-          incr idx
+        (* Fast scan of already generated prime numbers *)
+        while !res && not !end_bitset do
+          match  BatBitSet.next_set_bit t.data (!idx + 1) with
+            | Some i ->
+                idx := i;
+                res := (n mod !idx) <> 0
+            | None ->
+                end_bitset := true
         done;
         (* We reach the end of primes table *)
         while !res && !idx <= sqrt do
           res := (n mod !idx) <> 0;
-          incr idx
+          incr idx; incr idx (* we can jump over even number *)
         done;
         !res
     end
+
+let fold f a t =
+  E.fold f a t
+
+let list t =
+  E.list t
+
